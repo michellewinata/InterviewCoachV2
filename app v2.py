@@ -1,305 +1,244 @@
 """
-InterviewCoach - aplikasi latihan interview (English / Bahasa Indonesia)
-dengan real-time speech recognition lokal.
+InterviewCoach - Streamlit web app
+Supports Indonesian and English interview practice with local Whisper ASR.
 
-Cara jalan:
-    python app.py                 # model default: base
-    python app.py --model small   # lebih akurat, tapi lebih berat
+Run locally:
+    streamlit run app_streamlit.py
+
+Expected companion files in the same directory:
+    asr_engine.py
+    analyzer.py
+    questions.py
 """
 
-import argparse
 import json
 import os
-import queue
-import threading
 import time
-import tkinter as tk
 from datetime import datetime
-from tkinter import messagebox, ttk
+from pathlib import Path
 
 import numpy as np
-import sounddevice as sd
 import soundfile as sf
+import streamlit as st
 
 from analyzer import analyze, format_report
 from asr_engine import SAMPLE_RATE, StreamingTranscriber
 from questions import QUESTIONS
 
-STEP_SECONDS = 2.0   # transkripsi diperbarui tiap 2 detik audio baru
 LANGUAGES = {"Indonesia": "id", "English": "en"}
+MODEL_OPTIONS = ["tiny", "base", "small", "medium"]
 
 
-class InterviewCoachApp:
-    def __init__(self, root, model_size):
-        self.root = root
-        self.model_size = model_size
-        self.engine = None
+@st.cache_resource(show_spinner=False)
+def load_transcriber(model_size: str):
+    """Cache the ASR model so it is not loaded again on every rerun."""
+    return StreamingTranscriber(model_size=model_size)
 
-        self.recording = False
-        self.audio_q = queue.Queue()   # audio dari mic -> worker
-        self.ui_q = queue.Queue()      # worker -> tampilan
-        self.stop_flag = threading.Event()
-        self.all_audio = []
-        self.stream = None
-        self.start_time = 0.0
-        self.recording_seconds = 0.0
 
-        root.title("InterviewCoach - Real-Time Speech Recognition")
-        root.geometry("920x800")
-        root.protocol("WM_DELETE_WINDOW", self.on_close)
+def transcribe_audio(audio: np.ndarray, engine: StreamingTranscriber):
+    """Send recorded audio to the existing streaming engine in short chunks."""
+    engine.reset()
+    chunk_samples = max(1, int(2.0 * SAMPLE_RATE))
 
-        self.build_ui()
-        self.refresh_questions()
+    for start in range(0, len(audio), chunk_samples):
+        chunk = audio[start:start + chunk_samples]
+        if len(chunk):
+            engine.add_audio(chunk.astype(np.float32, copy=False))
+            engine.step()
 
-        # load model di thread terpisah supaya jendela nggak freeze
-        self.status_var.set(f"Memuat model Whisper '{model_size}'...")
-        threading.Thread(target=self.load_model, daemon=True).start()
-        self.root.after(100, self.poll_ui_queue)
+    # Finalize any remaining audio and return the final transcript/word timings.
+    engine.step(final=True)
+    return engine.get_text(), engine.get_words()
 
-    # ------------------------------------------------------------------ UI
-    def build_ui(self):
-        top = ttk.Frame(self.root, padding=10)
-        top.pack(fill="x")
 
-        ttk.Label(top, text="Bahasa jawaban:").grid(row=0, column=0, sticky="w")
-        self.lang_var = tk.StringVar(value="Indonesia")
-        self.lang_box = ttk.Combobox(top, textvariable=self.lang_var, values=list(LANGUAGES),
-                                     state="readonly", width=12)
-        self.lang_box.grid(row=0, column=1, padx=8, sticky="w")
-        self.lang_box.bind("<<ComboboxSelected>>", lambda e: self.refresh_questions())
+def save_session(audio, question, language, model_size, transcript, result, engine):
+    """Save a WAV and JSON report under ./sessions."""
+    os.makedirs("sessions", exist_ok=True)
+    name = datetime.now().strftime("session_%Y%m%d_%H%M%S")
 
-        ttk.Label(top, text="Pertanyaan:").grid(row=1, column=0, sticky="w", pady=(8, 0))
-        self.question_var = tk.StringVar()
-        self.question_box = ttk.Combobox(top, textvariable=self.question_var,
-                                         state="readonly", width=90)
-        self.question_box.grid(row=1, column=1, padx=8, pady=(8, 0), sticky="w")
-        self.question_box.bind("<<ComboboxSelected>>", lambda e: self.show_question())
+    wav_path = os.path.join("sessions", name + ".wav")
+    json_path = os.path.join("sessions", name + ".json")
 
-        self.question_label = ttk.Label(self.root, text="", font=("Segoe UI", 14, "bold"),
-                                        wraplength=860, padding=(10, 8))
-        self.question_label.pack(fill="x")
+    sf.write(wav_path, audio, SAMPLE_RATE)
 
-        controls = ttk.Frame(self.root, padding=(10, 0))
-        controls.pack(fill="x")
-        self.start_btn = ttk.Button(controls, text="Mulai Menjawab", command=self.start_session,
-                                    state="disabled")
-        self.start_btn.pack(side="left")
-        self.stop_btn = ttk.Button(controls, text="Selesai", command=self.stop_session,
-                                   state="disabled")
-        self.stop_btn.pack(side="left", padx=8)
+    data = {
+        "question": question["text"],
+        "language": language,
+        "model": model_size,
+        "transcript": transcript,
+        "analysis": result,
+        "latency": engine.latency_summary(),
+        "words": engine.get_words(),
+    }
+    with open(json_path, "w", encoding="utf-8") as f:
+        json.dump(data, f, ensure_ascii=False, indent=2)
 
-        info = ttk.Frame(self.root, padding=10)
-        info.pack(fill="x")
-        self.status_var = tk.StringVar()
-        self.timer_var = tk.StringVar(value="Waktu: 00:00")
-        self.latency_var = tk.StringVar(value="Latency: - | RTF: -")
-        ttk.Label(info, textvariable=self.status_var, width=40).pack(side="left")
-        ttk.Label(info, textvariable=self.timer_var, width=16).pack(side="left")
-        ttk.Label(info, textvariable=self.latency_var).pack(side="left")
+    return wav_path, json_path
 
-        box1 = ttk.LabelFrame(self.root, text="Transkripsi Live (abu-abu = masih bisa berubah)",
-                              padding=6)
-        box1.pack(fill="both", expand=True, padx=10, pady=(0, 6))
-        self.transcript = tk.Text(box1, height=9, wrap="word", font=("Segoe UI", 12),
-                                  state="disabled")
-        self.transcript.pack(fill="both", expand=True)
-        self.transcript.tag_config("final", foreground="black")
-        self.transcript.tag_config("partial", foreground="gray")
 
-        box2 = ttk.LabelFrame(self.root, text="Laporan Analisis", padding=6)
-        box2.pack(fill="both", expand=True, padx=10, pady=(0, 10))
-        self.report = tk.Text(box2, height=14, wrap="word", font=("Consolas", 10),
-                              state="disabled")
-        self.report.pack(fill="both", expand=True)
+st.set_page_config(
+    page_title="InterviewCoach",
+    page_icon="🎙️",
+    layout="wide",
+)
 
-    def lang_code(self):
-        return LANGUAGES[self.lang_var.get()]
+st.title("🎙️ InterviewCoach")
+st.caption("Latihan interview Bahasa Indonesia / English dengan speech recognition lokal.")
 
-    def refresh_questions(self):
-        """Isi dropdown pertanyaan sesuai bahasa yang dipilih."""
-        texts = [q["text"] for q in QUESTIONS[self.lang_code()]]
-        self.question_box["values"] = texts
-        self.question_box.current(0)
-        self.show_question()
+with st.sidebar:
+    st.header("Pengaturan")
+    language_name = st.selectbox("Bahasa jawaban", list(LANGUAGES.keys()))
+    model_size = st.selectbox(
+        "Model Whisper",
+        MODEL_OPTIONS,
+        index=1,
+        help="tiny lebih ringan; small/medium biasanya lebih akurat tetapi lebih lambat.",
+    )
+    st.info(
+        "Model ASR dijalankan di server aplikasi. Pada hosting gratis, proses pertama "
+        "bisa cukup lama karena model perlu diunduh dan dimuat."
+    )
 
-    def show_question(self):
-        self.question_label.config(text=self.question_var.get())
+language_code = LANGUAGES[language_name]
+question_list = QUESTIONS[language_code]
+question_texts = [q["text"] for q in question_list]
+selected_question_text = st.selectbox("Pertanyaan interview", question_texts)
+selected_index = question_texts.index(selected_question_text)
+question = question_list[selected_index]
 
-    def current_question(self):
-        return QUESTIONS[self.lang_code()][self.question_box.current()]
+st.subheader("Pertanyaan")
+st.markdown(f"**{question['text']}**")
 
-    def set_text(self, widget, text):
-        widget.config(state="normal")
-        widget.delete("1.0", "end")
-        widget.insert("end", text)
-        widget.config(state="disabled")
+st.markdown("### Rekam jawaban")
+st.write(
+    "Klik tombol rekam di bawah, jawab pertanyaan, lalu hentikan rekaman. "
+    "Jika browser tidak mendukung perekaman mikrofon, unggah file audio WAV."
+)
 
-    def show_transcript(self, final_text, partial_text):
-        self.transcript.config(state="normal")
-        self.transcript.delete("1.0", "end")
-        self.transcript.insert("end", final_text + " ", "final")
-        self.transcript.insert("end", partial_text, "partial")
-        self.transcript.see("end")
-        self.transcript.config(state="disabled")
+recorded_audio = None
+if hasattr(st, "audio_input"):
+    recorded_audio = st.audio_input("Rekam jawaban menggunakan mikrofon")
+else:
+    st.warning(
+        "Versi Streamlit yang terpasang belum menyediakan perekam audio. "
+        "Unggah file audio sebagai gantinya."
+    )
 
-    def set_inputs_enabled(self, enabled):
-        state = "readonly" if enabled else "disabled"
-        self.lang_box.config(state=state)
-        self.question_box.config(state=state)
+uploaded_audio = st.file_uploader(
+    "Atau unggah audio (WAV/FLAC/OGG)",
+    type=["wav", "flac", "ogg"],
+)
 
-    # --------------------------------------------------------------- model
-    def load_model(self):
+audio_source = recorded_audio if recorded_audio is not None else uploaded_audio
+
+if audio_source is not None:
+    st.audio(audio_source)
+
+    if st.button("Transkripsikan dan analisis jawaban", type="primary"):
         try:
-            self.engine = StreamingTranscriber(model_size=self.model_size)
-            self.ui_q.put(("ready",))
-        except Exception as e:
-            self.ui_q.put(("error", f"Gagal memuat model: {e}"))
+            with st.spinner(f"Memuat model Whisper '{model_size}'..."):
+                engine = load_transcriber(model_size)
+                engine.language = language_code
 
-    # ------------------------------------------------------------- sesi
-    def start_session(self):
-        self.engine.language = self.lang_code()
-        self.engine.reset()
-        self.all_audio = []
-        self.audio_q = queue.Queue()
-        self.stop_flag.clear()
+            with st.spinner("Membaca audio dan membuat transkripsi..."):
+                audio_source.seek(0)
+                audio, input_sample_rate = sf.read(audio_source, dtype="float32")
 
-        try:
-            self.stream = sd.InputStream(samplerate=SAMPLE_RATE, channels=1, dtype="float32",
-                                         blocksize=1600, callback=self.audio_callback)
-            self.stream.start()
-        except Exception as e:
-            messagebox.showerror("Mikrofon", f"Mikrofon tidak bisa dibuka:\n{e}")
-            return
+                # Convert stereo to mono.
+                if audio.ndim == 2:
+                    audio = np.mean(audio, axis=1)
 
-        self.recording = True
-        self.start_time = time.time()
-        threading.Thread(target=self.worker_loop, daemon=True).start()
+                # Resample if needed; scipy is a dependency of many audio stacks,
+                # but report a clear error if it is unavailable.
+                if input_sample_rate != SAMPLE_RATE:
+                    try:
+                        from scipy.signal import resample_poly
+                        from math import gcd
+                        divisor = gcd(int(input_sample_rate), int(SAMPLE_RATE))
+                        up = SAMPLE_RATE // divisor
+                        down = int(input_sample_rate) // divisor
+                        audio = resample_poly(audio, up, down).astype(np.float32)
+                    except Exception as exc:
+                        st.error(
+                            f"Sample rate audio ({input_sample_rate} Hz) berbeda dari "
+                            f"sample rate model ({SAMPLE_RATE} Hz), dan konversi gagal: {exc}"
+                        )
+                        st.stop()
 
-        self.start_btn.config(state="disabled")
-        self.stop_btn.config(state="normal")
-        self.set_inputs_enabled(False)
-        self.status_var.set("● Merekam... silakan menjawab")
-        self.set_text(self.report, "")
-        self.show_transcript("", "")
-        self.update_timer()
+                if len(audio) == 0:
+                    st.error("File audio kosong. Silakan rekam atau unggah audio lain.")
+                    st.stop()
 
-    def stop_session(self):
-        if not self.recording:
-            return
-        self.recording = False
-        self.recording_seconds = time.time() - self.start_time
-        self.stream.stop()
-        self.stream.close()
-        self.stop_flag.set()
-        self.stop_btn.config(state="disabled")
-        self.status_var.set("Memproses transkripsi akhir...")
+                started = time.time()
+                engine.language = language_code
+                transcript, words = transcribe_audio(audio, engine)
+                elapsed = time.time() - started
 
-    def audio_callback(self, indata, frames, time_info, status):
-        # dipanggil sounddevice tiap ada blok audio baru: cukup masukkan ke antrean
-        self.audio_q.put(indata[:, 0].copy())
+            st.subheader("Transkripsi")
+            if transcript.strip():
+                st.text_area("Hasil transkripsi", transcript, height=180)
+            else:
+                st.warning(
+                    "Transkripsi kosong. Coba rekam dengan suara lebih jelas atau gunakan "
+                    "model Whisper yang lebih besar."
+                )
 
-    def worker_loop(self):
-        """Thread terpisah: ambil audio dari antrean, transkripsi tiap STEP_SECONDS."""
-        step_samples = int(STEP_SECONDS * SAMPLE_RATE)
-        samples_since_step = 0
+            duration_seconds = len(audio) / SAMPLE_RATE
+            result = analyze(
+                words,
+                language_code,
+                question["keywords"],
+                question["ideal_seconds"],
+                duration_seconds,
+            )
 
-        while True:
+            st.subheader("Laporan analisis")
+            st.text(format_report(result, question["text"]))
+
             try:
-                chunk = self.audio_q.get(timeout=0.1)
-                self.engine.add_audio(chunk)
-                self.all_audio.append(chunk)
-                samples_since_step += len(chunk)
-            except queue.Empty:
-                if self.stop_flag.is_set():
-                    break
+                wav_path, json_path = save_session(
+                    audio,
+                    question,
+                    language_name,
+                    model_size,
+                    transcript,
+                    result,
+                    engine,
+                )
+                st.success("Sesi berhasil disimpan.")
+                st.caption(f"Audio: {wav_path} | Laporan: {json_path}")
 
-            if samples_since_step >= step_samples:
-                samples_since_step = 0
-                if self.engine.step():
-                    self.ui_q.put(("partial", self.engine.get_committed_text(),
-                                   self.engine.get_partial_text(),
-                                   self.engine.last_latency, self.engine.last_rtf))
+                with open(wav_path, "rb") as f:
+                    st.download_button(
+                        "Unduh audio WAV",
+                        data=f.read(),
+                        file_name=Path(wav_path).name,
+                        mime="audio/wav",
+                    )
+                with open(json_path, "rb") as f:
+                    st.download_button(
+                        "Unduh laporan JSON",
+                        data=f.read(),
+                        file_name=Path(json_path).name,
+                        mime="application/json",
+                    )
+            except Exception as exc:
+                st.warning(f"Analisis selesai, tetapi penyimpanan sesi gagal: {exc}")
 
-        self.engine.step(final=True)   # proses sisa audio, semua jadi final
-        self.ui_q.put(("final",))
+            with st.expander("Detail performa"):
+                st.write(f"Durasi audio: {duration_seconds:.1f} detik")
+                st.write(f"Waktu transkripsi: {elapsed:.1f} detik")
+                st.write(f"Jumlah kata terdeteksi: {len(words)}")
+                try:
+                    st.json(engine.latency_summary())
+                except Exception:
+                    pass
 
-    def update_timer(self):
-        if self.recording:
-            s = int(time.time() - self.start_time)
-            self.timer_var.set(f"Waktu: {s // 60:02d}:{s % 60:02d}")
-            self.root.after(200, self.update_timer)
+        except Exception as exc:
+            st.error(f"Gagal memproses audio: {exc}")
+            st.exception(exc)
+else:
+    st.info("Rekam jawaban atau unggah audio untuk memulai analisis.")
 
-    # ------------------------------------------------------ update tampilan
-    def poll_ui_queue(self):
-        try:
-            while True:
-                msg = self.ui_q.get_nowait()
-                kind = msg[0]
-                if kind == "ready":
-                    self.status_var.set("Model siap. Klik 'Mulai Menjawab'.")
-                    self.start_btn.config(state="normal")
-                elif kind == "error":
-                    self.status_var.set("Error")
-                    messagebox.showerror("Error", msg[1])
-                elif kind == "partial":
-                    _, final_text, partial_text, latency, rtf = msg
-                    self.show_transcript(final_text, partial_text)
-                    self.latency_var.set(f"Latency: {latency:.2f} dtk | RTF: {rtf:.2f}")
-                elif kind == "final":
-                    self.finish_session()
-        except queue.Empty:
-            pass
-        self.root.after(100, self.poll_ui_queue)
-
-    def finish_session(self):
-        words = self.engine.get_words()
-        self.show_transcript(self.engine.get_text(), "")
-
-        q = self.current_question()
-        result = analyze(words, self.lang_code(), q["keywords"], q["ideal_seconds"],
-                         self.recording_seconds)
-        self.set_text(self.report, format_report(result, q["text"]))
-
-        path = self.save_session(q, result)
-        self.status_var.set(f"Selesai. Sesi disimpan di {path}")
-        self.start_btn.config(state="normal")
-        self.set_inputs_enabled(True)
-
-    def save_session(self, question, result):
-        """Simpan audio (.wav) + data sesi (.json), berguna untuk bukti & evaluasi WER."""
-        os.makedirs("sessions", exist_ok=True)
-        name = datetime.now().strftime("session_%Y%m%d_%H%M%S")
-
-        if self.all_audio:
-            audio = np.concatenate(self.all_audio)
-            sf.write(os.path.join("sessions", name + ".wav"), audio, SAMPLE_RATE)
-
-        data = {
-            "question": question["text"],
-            "language": self.lang_code(),
-            "model": self.model_size,
-            "transcript": self.engine.get_text(),
-            "analysis": result,
-            "latency": self.engine.latency_summary(),
-            "words": self.engine.get_words(),
-        }
-        with open(os.path.join("sessions", name + ".json"), "w", encoding="utf-8") as f:
-            json.dump(data, f, ensure_ascii=False, indent=2)
-        return os.path.join("sessions", name)
-
-    def on_close(self):
-        if self.recording and self.stream is not None:
-            self.stream.stop()
-            self.stream.close()
-        self.root.destroy()
-
-
-if __name__ == "__main__":
-    parser = argparse.ArgumentParser()
-    parser.add_argument("--model", default="base",
-                        help="ukuran model Whisper: tiny / base / small / medium")
-    args = parser.parse_args()
-
-    root = tk.Tk()
-    InterviewCoachApp(root, args.model)
-    root.mainloop()
+st.divider()
+st.caption("InterviewCoach • Transkripsi diproses oleh model Whisper di server aplikasi.")
