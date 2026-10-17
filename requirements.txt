@@ -1,4 +1,7 @@
-faster-whisper
-sounddevice
-soundfile
+streamlit
+streamlit-webrtc
+av
 numpy
+soundfile
+scipy
+faster-whisper
