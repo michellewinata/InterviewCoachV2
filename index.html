@@ -1,0 +1,840 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<meta name="description" content="InterviewCoach - Practice interviews with Whisper large-v3-turbo transcription, filler word detection and performance reports." />
+<title>InterviewCoach</title>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=Inter:wght@300;400;500;600&display=swap" rel="stylesheet" />
+<style>
+:root{
+  --clr-lightest:#E3F2FD;--clr-light:#90CAF9;--clr-mid:#42A5F5;--clr-primary:#2196F3;--clr-dark:#0D47A1;
+  --clr-glass:rgba(255,255,255,.60);--clr-glass-border:rgba(145,202,249,.45);
+  --clr-filler:#E65100;--clr-interim:rgba(33,150,243,.55);
+  --radius-sm:8px;--radius-md:14px;--radius-lg:20px;--radius-xl:28px;
+  --shadow-sm:0 2px 8px rgba(13,71,161,.08);--shadow-md:0 6px 24px rgba(13,71,161,.12);--shadow-lg:0 16px 48px rgba(13,71,161,.18);
+  --transition:.25s cubic-bezier(.4,0,.2,1);
+  --font-head:'Plus Jakarta Sans',sans-serif;--font-body:'Inter',sans-serif;
+}
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+html,body{font-family:var(--font-body);background:linear-gradient(135deg,#E3F2FD 0%,#BBDEFB 50%,#E3F2FD 100%);min-height:100vh;color:#1a237e;overflow-x:hidden}
+::-webkit-scrollbar{width:6px}::-webkit-scrollbar-track{background:var(--clr-lightest)}::-webkit-scrollbar-thumb{background:var(--clr-light);border-radius:99px}
+
+/* Header */
+.header{background:linear-gradient(135deg,var(--clr-dark) 0%,#1565C0 60%,var(--clr-primary) 100%);padding:24px 40px;display:flex;align-items:center;justify-content:space-between;box-shadow:var(--shadow-lg);position:relative;overflow:hidden}
+.header::before{content:'';position:absolute;top:-50%;right:-5%;width:300px;height:300px;background:radial-gradient(circle,rgba(144,202,249,.2) 0%,transparent 70%);border-radius:50%}
+.header::after{content:'';position:absolute;bottom:-60%;left:10%;width:200px;height:200px;background:radial-gradient(circle,rgba(255,255,255,.08) 0%,transparent 70%);border-radius:50%}
+.header-left{display:flex;align-items:center;gap:16px;z-index:1}
+.logo-icon{width:52px;height:52px;background:rgba(255,255,255,.15);border:2px solid rgba(255,255,255,.3);border-radius:var(--radius-md);display:flex;align-items:center;justify-content:center;font-size:26px;backdrop-filter:blur(8px);box-shadow:0 4px 16px rgba(0,0,0,.2)}
+.header-text h1{font-family:var(--font-head);font-size:1.7rem;font-weight:800;color:#fff;letter-spacing:-.5px;line-height:1.1}
+.header-text p{font-size:.8rem;color:rgba(255,255,255,.75);letter-spacing:.2px;margin-top:3px}
+.header-right{display:flex;align-items:center;gap:12px;z-index:1}
+.model-badge{font-size:.7rem;font-weight:600;color:#fff;background:rgba(255,255,255,.14);border:1px solid rgba(255,255,255,.25);border-radius:99px;padding:6px 12px;letter-spacing:.3px}
+.lang-toggle{display:flex;background:rgba(255,255,255,.12);border:1px solid rgba(255,255,255,.2);border-radius:99px;padding:3px;gap:2px}
+.lang-btn{padding:6px 16px;border-radius:99px;border:none;font-family:var(--font-body);font-size:.78rem;font-weight:600;cursor:pointer;transition:var(--transition);color:rgba(255,255,255,.75);background:transparent;letter-spacing:.3px}
+.lang-btn.active{background:rgba(255,255,255,.25);color:#fff;box-shadow:0 2px 8px rgba(0,0,0,.15)}
+.lang-btn:hover:not(.active):not(:disabled){color:#fff;background:rgba(255,255,255,.1)}
+.lang-btn:disabled{cursor:not-allowed;opacity:.6}
+
+/* Layout */
+.main{padding:32px 40px;max-width:1400px;margin:0 auto}
+.grid-top{display:grid;grid-template-columns:340px 1fr;gap:24px;margin-bottom:24px}
+.grid-bottom{display:grid;grid-template-columns:1fr 1fr;gap:24px}
+
+/* Cards */
+.card{background:var(--clr-glass);border:1px solid var(--clr-glass-border);border-radius:var(--radius-xl);padding:28px;backdrop-filter:blur(16px);box-shadow:var(--shadow-md);transition:var(--transition)}
+.card:hover{box-shadow:var(--shadow-lg);transform:translateY(-1px)}
+.card-title{font-family:var(--font-head);font-size:.85rem;font-weight:700;color:var(--clr-dark);letter-spacing:.8px;text-transform:uppercase;margin-bottom:18px;display:flex;align-items:center;gap:8px}
+.card-title .icon{font-size:1rem}
+
+/* Mode selector */
+.mode-list{display:flex;flex-direction:column;gap:10px}
+.mode-card{display:flex;align-items:center;gap:14px;padding:16px 18px;border-radius:var(--radius-md);border:2px solid transparent;background:rgba(255,255,255,.55);cursor:pointer;transition:var(--transition)}
+.mode-card:hover,.mode-card.active{background:#fff;border-color:var(--clr-primary);box-shadow:0 4px 18px rgba(33,150,243,.18)}
+.mode-card:hover .mode-icon,.mode-card.active .mode-icon{background:rgba(33,150,243,.12)}
+.mode-card:hover .mode-text strong,.mode-card.active .mode-text strong{color:var(--clr-primary)}
+.mode-icon{width:44px;height:44px;border-radius:var(--radius-sm);background:var(--clr-lightest);display:flex;align-items:center;justify-content:center;font-size:20px;transition:var(--transition);flex-shrink:0}
+.mode-text strong{display:block;font-family:var(--font-head);font-size:.9rem;font-weight:700;color:var(--clr-dark);transition:var(--transition)}
+.mode-text span{font-size:.75rem;color:#5c7099}
+.question-panel{margin-top:16px;padding:16px;background:rgba(255,255,255,.6);border-radius:var(--radius-md);border:1px solid var(--clr-glass-border);display:none}
+.question-panel.visible{display:block}
+.q-select{width:100%;padding:10px 36px 10px 14px;border-radius:var(--radius-sm);border:1.5px solid var(--clr-light);background:#fff;font-family:var(--font-body);font-size:.85rem;color:var(--clr-dark);cursor:pointer;outline:none;transition:var(--transition);appearance:none;background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24'%3E%3Cpath fill='%230D47A1' d='M7 10l5 5 5-5z'/%3E%3C/svg%3E");background-repeat:no-repeat;background-position:right 12px center}
+.q-select:focus{border-color:var(--clr-primary);box-shadow:0 0 0 3px rgba(33,150,243,.15)}
+.q-display{margin-top:12px;padding:14px 16px;background:linear-gradient(135deg,var(--clr-lightest),#fff);border-radius:var(--radius-sm);border-left:3px solid var(--clr-primary);font-size:.9rem;color:var(--clr-dark);font-weight:500;line-height:1.5;min-height:52px;display:flex;align-items:center}
+.q-display.empty{color:#90a4ae;font-weight:400;font-style:italic}
+.btn-random{width:100%;margin-top:10px;padding:12px;background:linear-gradient(135deg,var(--clr-primary),var(--clr-dark));color:#fff;border:none;border-radius:var(--radius-sm);font-family:var(--font-head);font-size:.85rem;font-weight:700;cursor:pointer;transition:var(--transition);display:flex;align-items:center;justify-content:center;gap:8px;letter-spacing:.3px}
+.btn-random:hover{transform:translateY(-1px);box-shadow:0 4px 16px rgba(33,150,243,.4)}
+
+/* Status */
+.status-bar{display:flex;align-items:center;gap:10px;padding:12px 18px;border-radius:var(--radius-md);margin-bottom:20px;font-family:var(--font-head);font-size:.85rem;font-weight:600;transition:var(--transition)}
+.status-bar.idle{background:rgba(144,202,249,.2);border:1.5px solid var(--clr-light);color:var(--clr-dark)}
+.status-bar.listening{background:rgba(33,150,243,.1);border:1.5px solid var(--clr-primary);color:var(--clr-primary)}
+.status-bar.recording{background:rgba(244,67,54,.08);border:1.5px solid #ef5350;color:#c62828}
+.status-bar.analyzing{background:rgba(156,39,176,.08);border:1.5px solid #ab47bc;color:#6a1b9a}
+.status-bar.done{background:rgba(76,175,80,.1);border:1.5px solid #66bb6a;color:#2e7d32}
+.status-bar.error{background:rgba(244,67,54,.08);border:1.5px solid #ef5350;color:#c62828}
+.status-dot{width:10px;height:10px;border-radius:50%;flex-shrink:0}
+.status-bar.idle .status-dot{background:var(--clr-light)}
+.status-bar.listening .status-dot{background:var(--clr-primary);animation:pulse-blue 1.4s ease infinite}
+.status-bar.recording .status-dot{background:#ef5350;animation:pulse-red .8s ease infinite}
+.status-bar.analyzing .status-dot{background:#ab47bc;animation:pulse-purple 1s ease infinite}
+.status-bar.done .status-dot{background:#66bb6a}
+.status-bar.error .status-dot{background:#ef5350}
+@keyframes pulse-blue{0%,100%{box-shadow:0 0 0 0 rgba(33,150,243,.5)}50%{box-shadow:0 0 0 6px rgba(33,150,243,0)}}
+@keyframes pulse-red{0%,100%{box-shadow:0 0 0 0 rgba(239,83,80,.6)}50%{box-shadow:0 0 0 8px rgba(239,83,80,0)}}
+@keyframes pulse-purple{0%,100%{box-shadow:0 0 0 0 rgba(171,71,188,.5)}50%{box-shadow:0 0 0 6px rgba(171,71,188,0)}}
+.status-meta{margin-left:auto;font-size:.8rem;font-weight:500;opacity:.8}
+
+/* Controls */
+.controls{display:flex;gap:12px;margin-bottom:20px}
+.btn{flex:1;padding:14px 20px;border-radius:var(--radius-md);border:none;font-family:var(--font-head);font-size:.9rem;font-weight:700;cursor:pointer;transition:var(--transition);display:flex;align-items:center;justify-content:center;gap:8px;letter-spacing:.2px}
+.btn-start{background:linear-gradient(135deg,var(--clr-primary),var(--clr-dark));color:#fff;box-shadow:0 4px 16px rgba(33,150,243,.35)}
+.btn-start:hover:not(:disabled){transform:translateY(-2px);box-shadow:0 8px 24px rgba(33,150,243,.45)}
+.btn-stop{background:rgba(239,83,80,.1);color:#c62828;border:1.5px solid rgba(239,83,80,.4)}
+.btn-stop:hover:not(:disabled){background:rgba(239,83,80,.18);transform:translateY(-1px)}
+.btn-reset{background:rgba(144,202,249,.25);color:var(--clr-dark);border:1.5px solid var(--clr-light);flex:0;padding:14px 18px}
+.btn-reset:hover:not(:disabled){background:rgba(144,202,249,.45)}
+.btn:disabled{opacity:.4;cursor:not-allowed;transform:none!important}
+
+/* Live transcript */
+.transcript-area{min-height:220px;max-height:320px;overflow-y:auto;padding:20px;background:rgba(255,255,255,.55);border-radius:var(--radius-md);border:1.5px solid var(--clr-glass-border);font-size:1rem;line-height:1.8;color:#1a237e;position:relative}
+.transcript-area .placeholder{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:12px;color:#90a4ae;font-size:.9rem;pointer-events:none}
+.transcript-area .placeholder .ph-icon{font-size:2.5rem;opacity:.5}
+.transcript-interim{color:var(--clr-interim);font-style:italic;background:rgba(33,150,243,.06);border-radius:4px;padding:1px 4px}
+.live-metrics{display:flex;gap:12px;margin-top:12px}
+.live-metric{flex:1;padding:10px 14px;background:rgba(255,255,255,.5);border-radius:var(--radius-sm);border:1px solid var(--clr-glass-border);text-align:center}
+.live-metric .lm-val{font-family:var(--font-head);font-size:1.3rem;font-weight:800;color:var(--clr-dark);display:block}
+.live-metric .lm-lbl{font-size:.7rem;font-weight:500;color:#5c7099;letter-spacing:.5px;text-transform:uppercase}
+
+/* Report */
+.report-section{display:none}.report-section.visible{display:block}
+.report-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin-bottom:20px}
+.stat-card{padding:20px 18px;background:rgba(255,255,255,.65);border-radius:var(--radius-md);border:1px solid var(--clr-glass-border);text-align:center;transition:var(--transition)}
+.stat-card:hover{transform:translateY(-2px);box-shadow:var(--shadow-md)}
+.stat-card .stat-icon{font-size:1.8rem;margin-bottom:8px;display:block}
+.stat-card .stat-val{font-family:var(--font-head);font-size:1.6rem;font-weight:800;color:var(--clr-dark);display:block;line-height:1}
+.stat-card .stat-lbl{font-size:.72rem;font-weight:600;color:#5c7099;letter-spacing:.5px;text-transform:uppercase;margin-top:4px;display:block}
+.stat-card .stat-sub{font-size:.8rem;color:var(--clr-primary);margin-top:4px;display:block}
+.filler-tags,.keyword-tags{display:flex;flex-wrap:wrap;gap:8px;margin-top:10px}
+.filler-tag{padding:4px 12px;background:#FFF3E0;border:1px solid #FFCC80;border-radius:99px;font-size:.8rem;font-weight:600;color:#E65100}
+.keyword-tag{padding:5px 12px;background:rgba(33,150,243,.1);border:1px solid rgba(33,150,243,.25);border-radius:99px;font-size:.8rem;font-weight:600;color:var(--clr-dark)}
+.pause-list{margin-top:10px;display:flex;flex-direction:column;gap:6px}
+.pause-item{display:flex;align-items:center;gap:10px;padding:8px 12px;background:rgba(255,255,255,.5);border-radius:var(--radius-sm);font-size:.82rem;color:var(--clr-dark)}
+.pause-bar{height:6px;background:linear-gradient(90deg,var(--clr-light),var(--clr-primary));border-radius:99px;min-width:20px}
+.final-transcript{padding:20px;background:rgba(255,255,255,.65);border-radius:var(--radius-md);border:1.5px solid var(--clr-glass-border);font-size:.95rem;line-height:1.9;color:#1a237e;max-height:280px;overflow-y:auto}
+.filler-highlight{background:#FFF3E0;color:var(--clr-filler);border-radius:4px;padding:1px 5px;font-weight:600;border-bottom:2px solid #FFCC80}
+.pause-marker{display:inline-block;font-family:'Courier New',monospace;font-weight:800;font-size:.88em;border-radius:4px;padding:1px 6px;margin:0 3px;vertical-align:middle;letter-spacing:1px}
+.pause-marker.short{color:#1565C0;background:rgba(33,150,243,.12);border:1px solid rgba(33,150,243,.25)}
+.pause-marker.long{color:#6a1b9a;background:rgba(156,39,176,.1);border:1px solid rgba(156,39,176,.25)}
+
+.browser-warning{display:none;padding:20px 28px;background:#fff3e0;border:2px solid #ffcc80;border-radius:var(--radius-md);color:#e65100;font-weight:500;text-align:center;margin:24px 40px}
+.browser-warning .bw-icon{font-size:2rem;display:block;margin-bottom:8px}
+.section-label{font-family:var(--font-head);font-size:1rem;font-weight:700;color:var(--clr-dark);margin-bottom:16px;display:flex;align-items:center;gap:8px}
+.section-divider{height:1px;background:linear-gradient(90deg,var(--clr-light),transparent);margin:20px 0}
+
+@media(max-width:900px){
+  .main{padding:20px}.grid-top,.grid-bottom{grid-template-columns:1fr}
+  .header{padding:16px 20px}.header-text h1{font-size:1.3rem}
+  .report-grid{grid-template-columns:repeat(2,1fr)}.header-right{display:none}
+}
+@media(max-width:560px){.controls{flex-wrap:wrap}.live-metrics{flex-wrap:wrap}.live-metric{min-width:45%}}
+</style>
+</head>
+<body>
+
+<header class="header">
+  <div class="header-left">
+    <div class="logo-icon">🎙️</div>
+    <div class="header-text">
+      <h1>InterviewCoach</h1>
+      <p>Practice Interviews. Improve Your Answers. Build Confidence.</p>
+    </div>
+  </div>
+  <div class="header-right">
+    <span class="model-badge">⚡ Whisper large-v3-turbo</span>
+    <div class="lang-toggle">
+      <button class="lang-btn active" id="lang-en" onclick="setLang('en')" aria-label="Switch to English">🇬🇧 English</button>
+      <button class="lang-btn" id="lang-id" onclick="setLang('id')" aria-label="Switch to Bahasa Indonesia">🇮🇩 Indonesia</button>
+    </div>
+  </div>
+</header>
+
+<div class="browser-warning" id="browser-warning">
+  <span class="bw-icon">⚠️</span>
+  <strong>Browser Not Supported</strong><br/>
+  InterviewCoach needs microphone recording (<strong>MediaRecorder</strong>) over <strong>HTTPS</strong>.<br/>
+  Please use a recent version of Chrome, Edge, Firefox or Safari.
+</div>
+
+<main class="main" id="app-main">
+  <div class="grid-top">
+
+    <div>
+      <div class="card">
+        <div class="card-title"><span class="icon">⚙️</span> <span id="label-practice-mode">Practice Mode</span></div>
+        <div class="mode-list">
+          <div class="mode-card active" id="mode-free" onclick="selectMode('free')" role="button" tabindex="0" aria-pressed="true">
+            <div class="mode-icon">🗣️</div>
+            <div class="mode-text"><strong id="label-mode-free">Free Speak</strong><span id="label-mode-free-sub">Talk freely, no question</span></div>
+          </div>
+          <div class="mode-card" id="mode-choose" onclick="selectMode('choose')" role="button" tabindex="0" aria-pressed="false">
+            <div class="mode-icon">📋</div>
+            <div class="mode-text"><strong id="label-mode-choose">Choose Question</strong><span id="label-mode-choose-sub">Pick from 50 questions</span></div>
+          </div>
+          <div class="mode-card" id="mode-random" onclick="selectMode('random')" role="button" tabindex="0" aria-pressed="false">
+            <div class="mode-icon">🎲</div>
+            <div class="mode-text"><strong id="label-mode-random">Random Question</strong><span id="label-mode-random-sub">Surprise me!</span></div>
+          </div>
+        </div>
+
+        <div class="question-panel" id="choose-panel">
+          <select class="q-select" id="question-select" onchange="onQuestionSelect()" aria-label="Select interview question">
+            <option value="">— Select a question —</option>
+          </select>
+          <div class="q-display empty" id="q-display" aria-live="polite">No question selected</div>
+        </div>
+
+        <div class="question-panel" id="random-panel">
+          <div class="q-display" id="random-display" aria-live="polite">Click below to generate a question</div>
+          <button class="btn-random" id="btn-randomize" onclick="randomizeQuestion()">🎲 <span id="label-roll">Roll a Question</span></button>
+        </div>
+      </div>
+    </div>
+
+    <div>
+      <div class="card">
+        <div class="card-title"><span class="icon">🎙️</span> <span id="label-live-session">Live Session</span></div>
+
+        <div class="status-bar idle" id="status-bar" role="status" aria-live="polite">
+          <div class="status-dot"></div>
+          <span id="status-text">Ready to start</span>
+          <div class="status-meta" id="status-meta"></div>
+        </div>
+
+        <div class="controls">
+          <button class="btn btn-start" id="btn-start" onclick="startSession()" aria-label="Start recording">▶ <span id="label-start">Start Recording</span></button>
+          <button class="btn btn-stop" id="btn-stop" onclick="stopSession()" disabled aria-label="Stop recording">■ <span id="label-stop">Stop</span></button>
+          <button class="btn btn-reset" id="btn-reset" onclick="resetSession()" aria-label="Reset session">↺</button>
+        </div>
+
+        <div class="section-label"><span>📝</span> <span id="label-live-transcript">Live Transcript</span></div>
+        <div class="transcript-area" id="transcript-area" aria-live="polite" aria-label="Live transcript">
+          <div class="placeholder" id="transcript-placeholder">
+            <span class="ph-icon">🎤</span>
+            <span id="label-placeholder">Press Start and begin speaking…</span>
+          </div>
+          <span class="transcript-final" id="final-text"></span>
+          <span class="transcript-interim" id="interim-text"></span>
+        </div>
+
+        <div class="live-metrics">
+          <div class="live-metric"><span class="lm-val" id="live-wpm">—</span><span class="lm-lbl" id="label-wpm">WPM</span></div>
+          <div class="live-metric"><span class="lm-val" id="live-duration">0:00</span><span class="lm-lbl" id="label-duration">Duration</span></div>
+          <div class="live-metric"><span class="lm-val" id="live-words">0</span><span class="lm-lbl" id="label-words">Words</span></div>
+          <div class="live-metric"><span class="lm-val" id="live-fillers">0</span><span class="lm-lbl" id="label-fillers">Fillers</span></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="report-section" id="report-section">
+    <div class="section-label" style="margin-bottom:20px;font-size:1.1rem">📊 <span id="label-session-report">Session Report</span></div>
+    <div class="report-grid" id="report-stats-grid"></div>
+
+    <div class="grid-bottom">
+      <div>
+        <div class="card">
+          <div class="card-title"><span class="icon">🔴</span> <span id="label-filler-analysis">Filler Word Analysis</span></div>
+          <p id="filler-summary" style="font-size:.85rem;color:#5c7099;margin-bottom:10px"></p>
+          <div class="filler-tags" id="filler-tags"></div>
+          <div class="section-divider"></div>
+          <div class="card-title"><span class="icon">🔑</span> <span id="label-top-keywords">Top Keywords</span></div>
+          <div class="keyword-tags" id="keyword-tags"></div>
+          <div class="section-divider"></div>
+          <div class="card-title"><span class="icon">⏸️</span> <span id="label-pauses">Detected Pauses</span></div>
+          <p id="pause-summary" style="font-size:.85rem;color:#5c7099;margin-bottom:10px"></p>
+          <div class="pause-list" id="pause-list"></div>
+        </div>
+      </div>
+      <div>
+        <div class="card">
+          <div class="card-title"><span class="icon">📄</span> <span id="label-final-transcript">Final Transcript</span>
+            <span style="margin-left:auto;font-size:.72rem;color:#5c7099;font-weight:400;text-transform:none;letter-spacing:0">
+              <span style="background:#FFF3E0;border:1px solid #FFCC80;border-radius:4px;padding:2px 8px;color:#E65100;font-weight:600" id="label-legend-filler">filler</span>
+              <span id="label-legend-highlighted"> = highlighted</span>
+            </span>
+          </div>
+          <div class="final-transcript" id="final-transcript-display" aria-label="Final transcript with filler words highlighted"></div>
+        </div>
+      </div>
+    </div>
+  </div>
+</main>
+
+<script>
+// ═══════════════════════════════════════════════════
+//  CONFIG
+// ═══════════════════════════════════════════════════
+const API_BASE   = '';      // same origin (served by Modal). Set to your Modal URL if hosting this file elsewhere.
+const SEG_MS     = 6000;    // live-preview chunk length
+const PAUSE_MIN  = 1.5;     // seconds between words that counts as a pause
+const PAUSE_LONG = 3;       // seconds → "long" pause marker (//)
+
+// ═══════════════════════════════════════════════════
+//  INTERVIEW QUESTIONS — 50 questions, 5 categories
+// ═══════════════════════════════════════════════════
+const QUESTIONS = {
+  en: {
+    "General & About You": [
+      "Tell me about yourself.","What are your greatest strengths?","What is your biggest weakness?",
+      "Where do you see yourself in five years?","Why are you interested in this position?",
+      "Why do you want to work for this company?","What are you passionate about outside of work?",
+      "How would your colleagues describe you?","What motivates you to do your best work?","Describe your ideal work environment."
+    ],
+    "Teamwork & Collaboration": [
+      "Tell me about a time you worked successfully in a team.","How do you handle conflict with a coworker?",
+      "Describe a situation where you had to work with a difficult team member.",
+      "How do you prioritize tasks when working on a team project?",
+      "Give an example of when you went above and beyond for a teammate.",
+      "How do you give and receive constructive feedback?","Describe a time you led a team through a challenging project.",
+      "How do you ensure clear communication in a remote team?","Tell me about a time you influenced others to adopt your idea.",
+      "How do you handle disagreements with your manager?"
+    ],
+    "Problem Solving & Critical Thinking": [
+      "Describe a difficult problem you solved at work.","Tell me about a time you made a mistake and how you handled it.",
+      "How do you approach a task you've never done before?","Give an example of a creative solution you came up with.",
+      "Describe a time you had to make a decision without enough information.",
+      "How do you handle multiple deadlines at the same time?","Tell me about a time you failed and what you learned.",
+      "Describe a situation where you had to adapt quickly to a change.","How do you stay calm under pressure?",
+      "Give an example of how you improved a process or workflow."
+    ],
+    "Leadership & Initiative": [
+      "Tell me about a time you took initiative without being asked.","Describe a project you led from start to finish.",
+      "How do you motivate others during a difficult period?","Tell me about a time you mentored or coached a colleague.",
+      "How do you handle underperforming team members?","Describe a situation where you had to make an unpopular decision.",
+      "How do you set goals and track your progress?","Tell me about a time you successfully managed competing priorities.",
+      "Describe how you build trust with a new team.","What's your approach to delegating tasks?"
+    ],
+    "Career & Role-Specific": [
+      "Why should we hire you over other candidates?","What unique skills do you bring to this role?",
+      "How does this position align with your career goals?","What do you know about our company and industry?",
+      "Where did you hear about this job opening?","What salary range are you expecting?",
+      "Are you comfortable with travel or relocation?","Do you have any questions for us?",
+      "How soon can you start if offered the position?","Describe your biggest professional achievement."
+    ]
+  },
+  id: {
+    "Umum & Tentang Diri": [
+      "Ceritakan tentang diri Anda.","Apa kekuatan terbesar Anda?","Apa kelemahan terbesar Anda?",
+      "Di mana Anda melihat diri Anda dalam lima tahun ke depan?","Mengapa Anda tertarik dengan posisi ini?",
+      "Mengapa Anda ingin bekerja di perusahaan ini?","Apa yang Anda sukai di luar pekerjaan?",
+      "Bagaimana rekan kerja Anda menggambarkan Anda?","Apa yang memotivasi Anda untuk bekerja sebaik mungkin?",
+      "Deskripsikan lingkungan kerja ideal Anda."
+    ],
+    "Kerja Tim & Kolaborasi": [
+      "Ceritakan saat Anda berhasil bekerja dalam tim.","Bagaimana Anda menangani konflik dengan rekan kerja?",
+      "Ceritakan situasi di mana Anda harus bekerja dengan anggota tim yang sulit.",
+      "Bagaimana Anda memprioritaskan tugas dalam proyek tim?",
+      "Berikan contoh ketika Anda melakukan lebih dari yang diharapkan untuk rekan tim.",
+      "Bagaimana Anda memberikan dan menerima umpan balik konstruktif?",
+      "Ceritakan saat Anda memimpin tim melalui proyek yang menantang.",
+      "Bagaimana Anda memastikan komunikasi yang jelas dalam tim jarak jauh?",
+      "Ceritakan saat Anda memengaruhi orang lain untuk menerima ide Anda.",
+      "Bagaimana Anda menangani ketidaksepakatan dengan manajer Anda?"
+    ],
+    "Pemecahan Masalah & Berpikir Kritis": [
+      "Deskripsikan masalah sulit yang pernah Anda selesaikan di tempat kerja.",
+      "Ceritakan saat Anda membuat kesalahan dan bagaimana Anda mengatasinya.",
+      "Bagaimana Anda mendekati tugas yang belum pernah Anda lakukan?","Berikan contoh solusi kreatif yang Anda temukan.",
+      "Ceritakan saat Anda harus membuat keputusan tanpa informasi yang cukup.",
+      "Bagaimana Anda menangani banyak tenggat waktu sekaligus?","Ceritakan saat Anda gagal dan pelajaran yang Anda petik.",
+      "Deskripsikan situasi di mana Anda harus beradaptasi dengan cepat terhadap perubahan.",
+      "Bagaimana Anda tetap tenang di bawah tekanan?","Berikan contoh bagaimana Anda meningkatkan proses atau alur kerja."
+    ],
+    "Kepemimpinan & Inisiatif": [
+      "Ceritakan saat Anda mengambil inisiatif tanpa diminta.","Deskripsikan proyek yang Anda pimpin dari awal hingga akhir.",
+      "Bagaimana Anda memotivasi orang lain di saat sulit?","Ceritakan saat Anda membimbing atau melatih rekan kerja.",
+      "Bagaimana Anda menangani anggota tim yang berkinerja rendah?",
+      "Deskripsikan situasi di mana Anda harus membuat keputusan yang tidak populer.",
+      "Bagaimana Anda menetapkan tujuan dan melacak kemajuan Anda?","Ceritakan saat Anda berhasil mengelola prioritas yang bersaing.",
+      "Deskripsikan cara Anda membangun kepercayaan dengan tim baru.","Bagaimana pendekatan Anda dalam mendelegasikan tugas?"
+    ],
+    "Karier & Spesifik Posisi": [
+      "Mengapa kami harus mempekerjakan Anda daripada kandidat lain?","Keterampilan unik apa yang Anda bawa ke peran ini?",
+      "Bagaimana posisi ini sesuai dengan tujuan karier Anda?","Apa yang Anda ketahui tentang perusahaan dan industri kami?",
+      "Dari mana Anda mendengar tentang lowongan kerja ini?","Berapa ekspektasi gaji Anda?",
+      "Apakah Anda nyaman dengan perjalanan atau relokasi?","Apakah Anda memiliki pertanyaan untuk kami?",
+      "Seberapa cepat Anda bisa mulai jika ditawari posisi ini?","Deskripsikan pencapaian profesional terbesar Anda."
+    ]
+  }
+};
+
+const FILLERS = {
+  en: ["um","uh","like","you know","basically","literally","right","actually","kind of","sort of","honestly","okay","i mean","anyway","you see","well","so yeah","and stuff","or whatever","you know what i mean"],
+  id: ["ee","eee","anu","gitu","kan","tuh","ya","jadi","soalnya","terus","nah","intinya","maksudnya","gimana","kayak","emang","sebenarnya","begitu","yah","loh","deh","nih","sih"]
+};
+
+const STOP_WORDS_EN = new Set(["i","me","my","we","our","you","your","he","she","it","they","them","the","a","an","is","are","was","were","be","been","being","have","has","had","do","does","did","will","would","could","should","may","might","shall","can","to","of","in","on","at","for","with","about","by","from","up","out","as","and","or","but","if","then","than","so","yet","both","either","not","no","that","this","these","those","what","which","who","when","where","how","why","there","here","just","also","very","really","more","most","some","any","all"]);
+const STOP_WORDS_ID = new Set(["saya","aku","kita","kami","kamu","anda","dia","mereka","nya","yang","dan","atau","tapi","juga","ke","di","dari","untuk","dengan","pada","ini","itu","ada","tidak","bisa","akan","sudah","belum","jika","kalau","karena","oleh","lebih","banyak","sangat","saat","ketika","selalu","sering","pernah","dalam","lagi","harus","perlu","bagi","hal","cara","agar","maka","serta","maupun","bahwa","tentang"]);
+
+// ═══════════════════════════════════════════════════
+//  UI LABELS (i18n)
+// ═══════════════════════════════════════════════════
+const LABELS = {
+  en: {
+    practiceMode:"Practice Mode", modeFree:"Free Speak", modeFreeSub:"Talk freely, no question",
+    modeChoose:"Choose Question", modeChooseSub:"Pick from 50 questions", modeRandom:"Random Question", modeRandomSub:"Surprise me!",
+    liveSession:"Live Session", liveTranscript:"Live Transcript", placeholder:"Press Start and begin speaking…",
+    wpm:"WPM", duration:"Duration", words:"Words", fillers:"Fillers", start:"Start Recording", stop:"Stop",
+    sessionReport:"Session Report", fillerAnalysis:"Filler Word Analysis", topKeywords:"Top Keywords",
+    pauses:"Detected Pauses", finalTranscript:"Final Transcript", legendFiller:"filler", legendHighlighted:" = highlighted",
+    roll:"Roll a Question", statusReady:"Ready to start", statusListening:"Requesting microphone…",
+    statusRecording:"Recording", statusAnalyzing:"Analyzing with Whisper…", statusDone:"Session complete",
+    transcribing:"transcribing…", micDenied:"Microphone access denied", failed:"Transcription failed — try again",
+    noFillers:"No filler words detected. Excellent!", noKeywords:"No keywords found.", noPauses:"No significant pauses detected.",
+    fillerSummary:(n,w)=>`${n} filler word${n!==1?'s':''} detected (${w}% of total words)`,
+    pauseSummary:(n)=>`${n} pause${n!==1?'s':''} detected (>${PAUSE_MIN} seconds)`,
+  },
+  id: {
+    practiceMode:"Mode Latihan", modeFree:"Bicara Bebas", modeFreeSub:"Bicara bebas, tanpa pertanyaan",
+    modeChoose:"Pilih Pertanyaan", modeChooseSub:"Pilih dari 50 pertanyaan", modeRandom:"Pertanyaan Acak", modeRandomSub:"Kejutkan saya!",
+    liveSession:"Sesi Langsung", liveTranscript:"Transkrip Langsung", placeholder:"Tekan Mulai dan mulailah berbicara…",
+    wpm:"KPM", duration:"Durasi", words:"Kata", fillers:"Filler", start:"Mulai Rekam", stop:"Stop",
+    sessionReport:"Laporan Sesi", fillerAnalysis:"Analisis Kata Filler", topKeywords:"Kata Kunci Utama",
+    pauses:"Jeda Terdeteksi", finalTranscript:"Transkrip Akhir", legendFiller:"filler", legendHighlighted:" = disorot",
+    roll:"Pilihkan Pertanyaan", statusReady:"Siap untuk memulai", statusListening:"Meminta akses mikrofon…",
+    statusRecording:"Merekam", statusAnalyzing:"Menganalisis dengan Whisper…", statusDone:"Sesi selesai",
+    transcribing:"menranskripsi…", micDenied:"Akses mikrofon ditolak", failed:"Transkripsi gagal — coba lagi",
+    noFillers:"Tidak ada kata filler terdeteksi. Hebat!", noKeywords:"Tidak ada kata kunci ditemukan.", noPauses:"Tidak ada jeda signifikan terdeteksi.",
+    fillerSummary:(n,w)=>`${n} kata filler terdeteksi (${w}% dari total kata)`,
+    pauseSummary:(n)=>`${n} jeda terdeteksi (>${String(PAUSE_MIN).replace('.',',')} detik)`,
+  }
+};
+
+// ═══════════════════════════════════════════════════
+//  STATE
+// ═══════════════════════════════════════════════════
+let currentLang = 'en', currentMode = 'free', currentQuestion = '';
+let sessionActive = false, sessionStartTime = null, sessionTimerInterval = null;
+let stream = null, fullRec = null, segRec = null, segTimer = null;
+let fullChunks = [], segIndex = 0, recMime = '';
+let liveSegs = {}, pendingLive = 0, liveText = '';
+let pauses = [];
+let abortFinal = false;
+
+// ═══════════════════════════════════════════════════
+//  INIT
+// ═══════════════════════════════════════════════════
+function init() {
+  if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia || !window.MediaRecorder) {
+    document.getElementById('browser-warning').style.display = 'block';
+    document.getElementById('app-main').style.display = 'none';
+    return;
+  }
+  populateQuestions();
+  applyLabels();
+  document.getElementById('btn-stop').disabled = true;
+}
+
+function pickMime() {
+  const cands = ['audio/webm;codecs=opus', 'audio/webm', 'audio/mp4', 'audio/ogg;codecs=opus'];
+  return cands.find(m => MediaRecorder.isTypeSupported(m)) || '';
+}
+function extFor(mime) { return mime.includes('mp4') ? 'm4a' : mime.includes('ogg') ? 'ogg' : 'webm'; }
+
+// ═══════════════════════════════════════════════════
+//  LANGUAGE
+// ═══════════════════════════════════════════════════
+function setLang(lang) {
+  if (sessionActive) return;
+  currentLang = lang;
+  document.getElementById('lang-en').classList.toggle('active', lang === 'en');
+  document.getElementById('lang-id').classList.toggle('active', lang === 'id');
+  populateQuestions();
+  applyLabels();
+  currentQuestion = '';
+  document.getElementById('random-display').textContent = L('modeRandomSub');
+  updateQuestionDisplay();
+}
+function L(key) { return LABELS[currentLang][key] || LABELS.en[key] || key; }
+
+function applyLabels() {
+  const l = LABELS[currentLang];
+  const map = {
+    'label-practice-mode':'practiceMode','label-mode-free':'modeFree','label-mode-free-sub':'modeFreeSub',
+    'label-mode-choose':'modeChoose','label-mode-choose-sub':'modeChooseSub','label-mode-random':'modeRandom',
+    'label-mode-random-sub':'modeRandomSub','label-live-session':'liveSession','label-live-transcript':'liveTranscript',
+    'label-placeholder':'placeholder','label-wpm':'wpm','label-duration':'duration','label-words':'words',
+    'label-fillers':'fillers','label-start':'start','label-stop':'stop','label-session-report':'sessionReport',
+    'label-filler-analysis':'fillerAnalysis','label-top-keywords':'topKeywords','label-pauses':'pauses',
+    'label-final-transcript':'finalTranscript','label-legend-filler':'legendFiller',
+    'label-legend-highlighted':'legendHighlighted','label-roll':'roll'
+  };
+  for (const [id, key] of Object.entries(map)) setText(id, l[key]);
+  if (!sessionActive) setStatus('idle');
+}
+function setText(id, text) { const el = document.getElementById(id); if (el) el.textContent = text; }
+
+// ═══════════════════════════════════════════════════
+//  QUESTION MANAGEMENT
+// ═══════════════════════════════════════════════════
+function populateQuestions() {
+  const sel = document.getElementById('question-select');
+  sel.innerHTML = `<option value="">— ${currentLang==='en'?'Select a question':'Pilih pertanyaan'} —</option>`;
+  for (const [cat, qs] of Object.entries(QUESTIONS[currentLang])) {
+    const og = document.createElement('optgroup');
+    og.label = cat;
+    qs.forEach(q => { const o = document.createElement('option'); o.value = q; o.textContent = q; og.appendChild(o); });
+    sel.appendChild(og);
+  }
+}
+function getAllQuestions() { return Object.values(QUESTIONS[currentLang]).flat(); }
+
+function selectMode(mode) {
+  currentMode = mode;
+  ['free','choose','random'].forEach(m => {
+    const el = document.getElementById(`mode-${m}`);
+    el.classList.toggle('active', m === mode);
+    el.setAttribute('aria-pressed', m === mode ? 'true' : 'false');
+  });
+  document.getElementById('choose-panel').classList.toggle('visible', mode === 'choose');
+  document.getElementById('random-panel').classList.toggle('visible', mode === 'random');
+  if (mode === 'free') { currentQuestion = ''; }
+  updateQuestionDisplay();
+}
+function onQuestionSelect() {
+  currentQuestion = document.getElementById('question-select').value;
+  updateQuestionDisplay();
+}
+function randomizeQuestion() {
+  const all = getAllQuestions();
+  currentQuestion = all[Math.floor(Math.random() * all.length)];
+  updateQuestionDisplay();
+  const btn = document.getElementById('btn-randomize');
+  btn.style.transform = 'scale(0.95)';
+  setTimeout(() => btn.style.transform = '', 150);
+}
+function updateQuestionDisplay() {
+  const none = currentLang === 'en' ? 'No question selected' : 'Belum dipilih';
+  if (currentMode === 'choose') {
+    const d = document.getElementById('q-display');
+    d.textContent = currentQuestion || none;
+    d.classList.toggle('empty', !currentQuestion);
+  } else if (currentMode === 'random') {
+    document.getElementById('random-display').textContent = currentQuestion || L('modeRandomSub');
+  }
+}
+
+// ═══════════════════════════════════════════════════
+//  STATUS
+// ═══════════════════════════════════════════════════
+function setStatus(state, meta = '') {
+  document.getElementById('status-bar').className = `status-bar ${state}`;
+  const labels = { idle:L('statusReady'), listening:L('statusListening'), recording:L('statusRecording'),
+                   analyzing:L('statusAnalyzing'), done:L('statusDone'), error:meta };
+  document.getElementById('status-text').textContent = labels[state] || state;
+  document.getElementById('status-meta').textContent = state === 'error' ? '' : meta;
+}
+
+// ═══════════════════════════════════════════════════
+//  API
+// ═══════════════════════════════════════════════════
+async function transcribe(blob, live) {
+  const fd = new FormData();
+  fd.append('audio', blob, `audio.${extFor(recMime)}`);
+  fd.append('lang', currentLang);
+  fd.append('live', live ? '1' : '0');
+  const r = await fetch(`${API_BASE}/api/transcribe`, { method: 'POST', body: fd });
+  if (!r.ok) throw new Error(await r.text());
+  return r.json();
+}
+
+// ═══════════════════════════════════════════════════
+//  SESSION CONTROL
+// ═══════════════════════════════════════════════════
+function clearSessionUI() {
+  liveSegs = {}; liveText = ''; pendingLive = 0; pauses = [];
+  document.getElementById('final-text').textContent = '';
+  document.getElementById('interim-text').textContent = '';
+  document.getElementById('transcript-placeholder').style.display = 'flex';
+  document.getElementById('report-section').classList.remove('visible');
+  document.getElementById('live-duration').textContent = '0:00';
+  document.getElementById('live-wpm').textContent = '—';
+  document.getElementById('live-words').textContent = '0';
+  document.getElementById('live-fillers').textContent = '0';
+}
+
+async function startSession() {
+  clearSessionUI();
+  abortFinal = false;
+  setStatus('listening');
+  document.getElementById('btn-start').disabled = true;
+
+  try {
+    stream = await navigator.mediaDevices.getUserMedia({
+      audio: { channelCount: 1, echoCancellation: true, noiseSuppression: true }
+    });
+  } catch (e) {
+    console.error(e);
+    setStatus('error', L('micDenied'));
+    document.getElementById('btn-start').disabled = false;
+    return;
+  }
+
+  fetch(`${API_BASE}/api/warmup`, { method: 'POST' }).catch(() => {}); // boot the GPU early
+
+  recMime = pickMime();
+  const opts = recMime ? { mimeType: recMime } : undefined;
+
+  // Full-session recorder → source of truth for the final report
+  fullChunks = [];
+  fullRec = new MediaRecorder(stream, opts);
+  fullRec.ondataavailable = e => { if (e.data.size) fullChunks.push(e.data); };
+  fullRec.onstop = onFullStop;
+  fullRec.start(1000);
+
+  sessionStartTime = Date.now();
+  sessionActive = true;
+  segIndex = 0;
+  startSegment(opts);
+
+  sessionTimerInterval = setInterval(tickLiveMetrics, 500);
+  setStatus('recording');
+  document.getElementById('btn-stop').disabled = false;
+  document.getElementById('lang-en').disabled = document.getElementById('lang-id').disabled = true;
+}
+
+// Rolling, self-contained chunks → each can be decoded alone → live preview
+function startSegment(opts) {
+  const idx = segIndex++;
+  const chunks = [];
+  const rec = new MediaRecorder(stream, opts);
+  rec.ondataavailable = e => { if (e.data.size) chunks.push(e.data); };
+  rec.onstop = () => {
+    if (!sessionActive || !chunks.length) return;   // last partial chunk is covered by the final pass
+    uploadLive(idx, new Blob(chunks, { type: rec.mimeType }));
+  };
+  rec.start();
+  segRec = rec;
+  segTimer = setTimeout(() => {
+    if (sessionActive) startSegment(opts);          // start the next one first → no audio gap
+    try { rec.stop(); } catch (e) {}
+  }, SEG_MS);
+}
+
+async function uploadLive(idx, blob) {
+  pendingLive++; renderLive();
+  try {
+    const res = await transcribe(blob, true);
+    if (!sessionActive) return;
+    liveSegs[idx] = res.text || '';
+  } catch (e) {
+    console.warn('live chunk failed', e);
+  } finally {
+    pendingLive--; if (sessionActive) renderLive();
+  }
+}
+
+function renderLive() {
+  liveText = Object.keys(liveSegs).map(Number).sort((a, b) => a - b).map(k => liveSegs[k]).join(' ').trim();
+  document.getElementById('final-text').textContent = liveText;
+  document.getElementById('interim-text').textContent = pendingLive > 0 ? ` ${L('transcribing')}` : '';
+  if (liveText || pendingLive > 0) document.getElementById('transcript-placeholder').style.display = 'none';
+  const area = document.getElementById('transcript-area');
+  area.scrollTop = area.scrollHeight;
+  document.getElementById('live-fillers').textContent = countFillers(liveText);
+}
+
+function tickLiveMetrics() {
+  const elapsed = (Date.now() - sessionStartTime) / 1000;
+  document.getElementById('live-duration').textContent = formatTime(elapsed);
+  const words = liveText ? liveText.split(/\s+/).filter(Boolean).length : 0;
+  document.getElementById('live-wpm').textContent = (elapsed > 8 && words) ? Math.round(words / elapsed * 60) : '—';
+  document.getElementById('live-words').textContent = words;
+}
+
+function releaseMic() {
+  if (stream) { stream.getTracks().forEach(t => t.stop()); stream = null; }
+}
+
+function stopSession() {
+  if (!sessionActive) return;
+  sessionActive = false;
+  clearInterval(sessionTimerInterval);
+  clearTimeout(segTimer);
+  try { segRec.stop(); } catch (e) {}
+  try { fullRec.stop(); } catch (e) {}   // → onFullStop
+  setStatus('analyzing');
+  document.getElementById('btn-stop').disabled = true;
+}
+
+async function onFullStop() {
+  releaseMic();
+  if (abortFinal) return;
+  const duration = (Date.now() - sessionStartTime) / 1000;
+  const blob = new Blob(fullChunks, { type: recMime || 'audio/webm' });
+  try {
+    const res = await transcribe(blob, false);
+    if (abortFinal) return;
+    buildReport(duration, res.words || []);
+  } catch (e) {
+    console.error(e);
+    setStatus('error', L('failed'));
+  } finally {
+    document.getElementById('btn-start').disabled = false;
+    document.getElementById('lang-en').disabled = document.getElementById('lang-id').disabled = false;
+  }
+}
+
+function resetSession() {
+  abortFinal = true;
+  sessionActive = false;
+  clearInterval(sessionTimerInterval);
+  clearTimeout(segTimer);
+  try { segRec && segRec.state !== 'inactive' && segRec.stop(); } catch (e) {}
+  try { fullRec && fullRec.state !== 'inactive' && fullRec.stop(); } catch (e) {}
+  releaseMic();
+  clearSessionUI();
+  document.getElementById('btn-start').disabled = false;
+  document.getElementById('btn-stop').disabled = true;
+  document.getElementById('lang-en').disabled = document.getElementById('lang-id').disabled = false;
+  setStatus('idle');
+}
+
+// ═══════════════════════════════════════════════════
+//  ANALYSIS ENGINE
+// ═══════════════════════════════════════════════════
+function escapeRegex(s) { return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'); }
+function escapeHtml(s) { return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
+
+// Count with longest fillers first and blank out matches, so "you know what i mean" isn't also counted as "you know" / "i mean".
+function getFillerBreakdown(text) {
+  let rest = text.toLowerCase();
+  const result = {};
+  [...FILLERS[currentLang]].sort((a, b) => b.length - a.length).forEach(f => {
+    const re = new RegExp(`\\b${escapeRegex(f)}\\b`, 'gi');
+    const m = rest.match(re);
+    if (m) { result[f] = m.length; rest = rest.replace(re, ' '); }
+  });
+  return result;
+}
+function countFillers(text) {
+  return text ? Object.values(getFillerBreakdown(text)).reduce((a, b) => a + b, 0) : 0;
+}
+
+function extractKeywords(text) {
+  const stops = currentLang === 'en' ? STOP_WORDS_EN : STOP_WORDS_ID;
+  const fillers = new Set(FILLERS[currentLang]);
+  const freq = {};
+  (text.toLowerCase().match(/\b[a-zA-ZÀ-ÿ]{4,}\b/g) || []).forEach(w => {
+    if (!stops.has(w) && !fillers.has(w)) freq[w] = (freq[w] || 0) + 1;
+  });
+  return Object.entries(freq).sort((a, b) => b[1] - a[1]).slice(0, 12).map(([word, count]) => ({ word, count }));
+}
+
+// Whisper word timestamps → transcript string with pause markers (" / " short, " // " long) + pause list
+function wordsToMarkedText(words) {
+  pauses = [];
+  let out = '';
+  words.forEach((w, i) => {
+    if (i > 0) {
+      const gap = w.s - words[i - 1].e;
+      if (gap >= PAUSE_MIN) {
+        pauses.push({ duration: Math.round(gap * 10) / 10, time: formatTime(words[i - 1].e) });
+        out += gap > PAUSE_LONG ? ' // ' : ' / ';
+      } else out += ' ';
+    }
+    out += w.w;
+  });
+  return out.trim();
+}
+
+function highlightFillers(text) {
+  if (!text.trim()) return '';
+  let result = escapeHtml(text);
+  result = result.replace(/ \/{2} /g, '<span class="pause-marker long" title="Long pause (>3s)">//</span>');
+  result = result.replace(/ \/ /g, '<span class="pause-marker short" title="Short pause (1.5–3s)">/</span>');
+  [...FILLERS[currentLang]].sort((a, b) => b.length - a.length).forEach(f => {
+    const re = new RegExp(`\\b(${escapeRegex(f)})\\b(?![^<]*>)`, 'gi');  // skip text inside tags
+    result = result.replace(re, '<span class="filler-highlight">$1</span>');
+  });
+  return result;
+}
+
+function buildReport(duration, words) {
+  const en = currentLang === 'en';
+  const marked = wordsToMarkedText(words);
+  const cleanText = words.map(w => w.w).join(' ');
+  const totalWords = words.length;
+  const wpm = duration > 0 ? Math.round(totalWords / duration * 60) : 0;
+  const breakdown = getFillerBreakdown(cleanText);
+  const totalFillers = Object.values(breakdown).reduce((a, b) => a + b, 0);
+  const fillerPct = totalWords > 0 ? Math.round(totalFillers / totalWords * 100) : 0;
+  const keywords = extractKeywords(cleanText);
+
+  // Swap the rough live preview for the final Whisper transcript
+  document.getElementById('final-text').textContent = cleanText;
+  document.getElementById('interim-text').textContent = '';
+  document.getElementById('transcript-placeholder').style.display = cleanText ? 'none' : 'flex';
+  document.getElementById('live-words').textContent = totalWords;
+  document.getElementById('live-fillers').textContent = totalFillers;
+  document.getElementById('live-wpm').textContent = wpm || '—';
+
+  const stats = [
+    { icon:'⏱️', val:formatTime(duration), lbl:en?'Duration':'Durasi', sub:'' },
+    { icon:'💬', val:totalWords, lbl:en?'Total Words':'Total Kata', sub:'' },
+    { icon:'📈', val:wpm, lbl:en?'Avg WPM':'Rata-rata KPM', sub:en?'Words per minute':'Kata per menit' },
+    { icon:'🔴', val:totalFillers, lbl:en?'Filler Words':'Kata Filler', sub:`${fillerPct}% ${en?'of words':'dari kata'}` },
+    { icon:'⏸️', val:pauses.length, lbl:en?'Pauses':'Jeda', sub:en?`>${PAUSE_MIN}s gaps`:`>${String(PAUSE_MIN).replace('.',',')}s jeda` },
+    { icon:'🔑', val:keywords.length, lbl:en?'Key Topics':'Topik Kunci', sub:'' },
+  ];
+  document.getElementById('report-stats-grid').innerHTML = stats.map(s => `
+    <div class="stat-card">
+      <span class="stat-icon">${s.icon}</span>
+      <span class="stat-val">${s.val}</span>
+      <span class="stat-lbl">${s.lbl}</span>
+      ${s.sub ? `<span class="stat-sub">${s.sub}</span>` : ''}
+    </div>`).join('');
+
+  document.getElementById('filler-summary').textContent =
+    totalFillers > 0 ? LABELS[currentLang].fillerSummary(totalFillers, fillerPct) : L('noFillers');
+  document.getElementById('filler-tags').innerHTML = Object.entries(breakdown)
+    .sort((a, b) => b[1] - a[1]).map(([w, c]) => `<span class="filler-tag">${escapeHtml(w)} ×${c}</span>`).join('');
+
+  document.getElementById('keyword-tags').innerHTML = keywords.length
+    ? keywords.map(k => `<span class="keyword-tag">${escapeHtml(k.word)} <small style="opacity:.6">×${k.count}</small></span>`).join('')
+    : `<span style="color:#90a4ae;font-size:.85rem">${L('noKeywords')}</span>`;
+
+  document.getElementById('pause-summary').textContent = LABELS[currentLang].pauseSummary(pauses.length);
+  document.getElementById('pause-list').innerHTML = pauses.length
+    ? pauses.map(p => `
+        <div class="pause-item">
+          <div class="pause-bar" style="width:${Math.min(p.duration * 20, 120)}px"></div>
+          <span>${en?'At':'Pada'} ${p.time} — ${p.duration}s ${en?'pause':'jeda'}</span>
+        </div>`).join('')
+    : `<span style="color:#90a4ae;font-size:.85rem">${L('noPauses')}</span>`;
+
+  document.getElementById('final-transcript-display').innerHTML = highlightFillers(marked)
+    || `<span style="color:#90a4ae;font-style:italic">${en?'No transcript recorded.':'Tidak ada transkrip.'}</span>`;
+
+  document.getElementById('report-section').classList.add('visible');
+  setStatus('done');
+  document.getElementById('report-section').scrollIntoView({ behavior: 'smooth', block: 'start' });
+}
+
+function formatTime(seconds) {
+  const m = Math.floor(seconds / 60), s = Math.floor(seconds % 60);
+  return `${m}:${String(s).padStart(2, '0')}`;
+}
+
+document.addEventListener('DOMContentLoaded', () => {
+  document.querySelectorAll('.mode-card').forEach(card =>
+    card.addEventListener('keypress', e => { if (e.key === 'Enter' || e.key === ' ') card.click(); }));
+});
+
+init();
+</script>
+</body>
+</html>
