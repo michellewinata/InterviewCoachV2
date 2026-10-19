@@ -1,7 +1,0 @@
-streamlit
-streamlit-webrtc
-av
-numpy
-soundfile
-scipy
-faster-whisper
